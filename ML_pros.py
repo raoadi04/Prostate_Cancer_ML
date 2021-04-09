@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from collections import Counter
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis 
 from sklearn.decomposition import PCA, KernelPCA
@@ -10,6 +11,7 @@ from sklearn.ensemble import IsolationForest
 
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.feature_selection import SelectKBest, chi2, mutual_info_classif
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import cross_val_predict
@@ -18,6 +20,9 @@ from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import GaussianNB
 from statistics import mean
 from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
+
+from imblearn.over_sampling import SMOTE
+from imblearn.combine import SMOTEENN
 
 
 def load_genomic_data(filename):
@@ -48,6 +53,7 @@ def read_data(gfilename, cfilename):
         print("-- Yes, patient ID's in genetic data set and clinical dataset matches\n")
     else:
         print("Nope, patient ID's in genetic data set and clinical dataset do not match")
+    
     y =  clinical_df['GLEASON_SCORE']                   
     
     return X, y
@@ -76,36 +82,41 @@ def prepare_inputs(X_train, X_test):
     X_test_norm = scaler.transform(X_test)             
     return X_train_norm, X_test_norm
 
+def remove_low_variance_feature(X):
+    sel = VarianceThreshold()
+    return sel.fit_transform(X)
+    
+    
 def feature_selection(X_train_norm, y_train_enc, X_test_norm, score_function):
-    test = SelectKBest(score_func=score_function, k=100)
-    fit = test.fit(X_train_norm, y_train_enc)
+    best_k = SelectKBest(score_func=score_function, k=11)
+    fit = best_k.fit(X_train_norm, y_train_enc)
     #print(fit.get_support(indices=True))
     X_train_fs = fit.transform(X_train_norm)
     X_test_fs = fit.transform(X_test_norm)
+    
+    dfscores = pd.DataFrame(fit.scores_)
+    dfcolumns = pd.DataFrame(X_train.columns)
+    featureScores = pd.concat([dfcolumns, dfscores], axis=1)
+    featureScores.columns = ['Features','Score']
+    print(featureScores.nlargest(9,'Score'))
+
     return X_train_fs, X_test_fs
 
 def get_performace_measures(model, X_train, X_test, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list):
     model = OneVsRestClassifier(model).fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
-    # cm = confusion_matrix(y_test, y_pred)
-    # print(cm)
-    # tn, fp, fn, tp = cm.ravel()
-    
-    # if tp+fp != 0:
-    #     PPV_list.append(tp/(tp+fp))
-    # if tn+fn != 0:    
-    #     NPV_list.append(tn/(tn+fn))
-    # if tn+fp != 0:
-    #     Specificity_list.append(tn/(tn+fp))
-    # if tp+fn != 0:
-    #     Sensitivity_list.append(tp/(tp+fn))
     Accuracy_list.append(accuracy_score(y_test, y_pred))
     
 
 X, y = read_data('prad_tcga_genes.csv', 'prad_tcga_clinical_data.csv')
 
-kf = KFold(n_splits = 10, shuffle=True)
+#Resampling dataset
+sme = SMOTEENN(random_state=42,smote=SMOTE(random_state=42, k_neighbors=1))
+X, y = sme.fit_resample(X, y)
+print('Resampling of dataset using SMOTEENN %s' % Counter(y), '\n')
+
+kf = KFold(n_splits = 10, shuffle=True, random_state=23)
 
 PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list = [], [], [], [], []
 for train_index, test_index in kf.split(X):
@@ -113,12 +124,8 @@ for train_index, test_index in kf.split(X):
     X_train_norm, X_test_norm = prepare_inputs(X_train, X_test)
     X_train_fs, X_test_fs = feature_selection(X_train_norm, y_train, X_test_norm, chi2)
 
-    get_performace_measures(GaussianNB(), X_train_fs, X_test_fs, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list)
+    get_performace_measures(LinearDiscriminantAnalysis(), X_train_fs, X_test_fs, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list)
     
 print("-----------------------------------------------")
-# print("PPV:", round(mean(PPV_list), 4))
-# print("NPV: ", round(mean(NPV_list), 4))
-# print("Specificity: ", round(mean(Specificity_list), 4))
-# print("Sensitivity: ", round(mean(Sensitivity_list), 4))
 print("Accuracy: ", round(mean(Accuracy_list), 4))
 print("-----------------------------------------------")
