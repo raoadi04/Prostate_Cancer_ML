@@ -1,50 +1,124 @@
 import pandas as pd
 import numpy as np
-from collections import Counter
-from mpl_toolkits import mplot3d
-import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.pyplot as plt
-import sklearn
-from sklearn.model_selection import cross_val_score,cross_val_predict
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.naive_bayes import GaussianNB
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.preprocessing import MinMaxScaler
+
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis 
 from sklearn.decomposition import PCA, KernelPCA
-from sklearn.feature_selection import SelectFromModel
 from sklearn.ensemble import IsolationForest
-from sklearn import decomposition
-import warnings
-warnings.filterwarnings("ignore")
 
-#Importing Dataset
-Gene_Data = pd.read_excel('prad_tcga_genes.xlsx')
-Patient_Data = pd.read_excel('prad_tcga_clinical_data.xlsx')
-Gene_Data = Gene_Data.drop(columns=['ID'])
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.feature_selection import SelectKBest, chi2, mutual_info_classif
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.naive_bayes import GaussianNB
+from statistics import mean
+from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
 
-#Extracting Y Value
-Y = Patient_Data['GLEASON_SCORE']
-Y.drop(Y.tail(5).index,inplace = True)
 
-#Transposing Data
-X_old = Gene_Data.transpose()
-X_old.drop(X_old.columns[60483], axis=1, inplace=True)
+def load_genomic_data(filename):
+     # load the geneomic data
+    genomic_df = pd.read_csv(filename)
 
-# Plot for dataset with outliers
-pca = PCA(n_components=10)
-pca_data = pca.fit_transform(X_old,Y)
+    # Setting index to first column, else it will add its own indexing while doing transpose
+    genomic_df.set_index('ID', inplace = True)
+    
+    # Need to take transpose since I want genes/features to be columns and each row should represent a patient information
+    genomic_df = genomic_df.T
+    
+    # removing features with only zero values for all patients
+    return genomic_df.loc[:, (genomic_df != 0).any(axis = 0)]    
+    
+def read_data(gfilename, cfilename):
+    # Feature set, load geonomic data
+    X = load_genomic_data(gfilename)
+    
+    # load the clinical data
+    clinical_df = pd.read_csv(cfilename)
+    print("Shape of genomic data: ", X.shape, " and Shape of clinical data: ", clinical_df.shape, "thus looks like we donot have genetic data for 5 patients, hence removing them")
+    clinical_df = clinical_df.drop(labels=[213,227,297,371,469], axis=0)
+    print("After droping 5 patients whose data were missing:\nShape of genomic data: ", X.shape, " and Shape of clinical data: ", clinical_df.shape, "\n")
+    
+    print("-- Checking if all patient ID's in genetic data set and clinical dataset matches\n")
+    if(X.index.all() == clinical_df['PATIENT_ID'].all()):
+        print("-- Yes, patient ID's in genetic data set and clinical dataset matches\n")
+    else:
+        print("Nope, patient ID's in genetic data set and clinical dataset do not match")
+    y =  clinical_df['GLEASON_SCORE']                   
+    
+    return X, y
 
-lda = LinearDiscriminantAnalysis(n_components = 2)
-pca_lda_data = lda.fit_transform(pca_data,Y)
 
-label = [6,7,8,9,10]
-colors = ['red','green','blue','purple','pink']
+def visualize_data(X, y, title):
+    # Visualizing dataset for outliers, using PCA prioir to LDA to prevent overfitting (https://stats.stackexchange.com/q/109810)
+    pca = PCA(n_components=10)
+    pca_reduced_data = pca.fit_transform(X,y)
+    
+    lda = LinearDiscriminantAnalysis(n_components = 2)
+    pca_lda_reduced_data = lda.fit_transform(pca_reduced_data, y)
+    
+    # NOTE: Gleason score ranges from 6-10
+    label = [6, 7, 8, 9, 10]
+    colors = ['red','green','blue','purple','pink']
+    
+    fig = plt.figure(figsize=(6,6))
+    plt.scatter(pca_lda_reduced_data[:,0], pca_lda_reduced_data[:,1], c=y, cmap=matplotlib.colors.ListedColormap(colors), alpha=0.7)
+    plt.title(title)
+    
+    
+def prepare_inputs(X_train, X_test):
+    scaler = MinMaxScaler()
+    X_train_norm = scaler.fit_transform(X_train)
+    X_test_norm = scaler.transform(X_test)             
+    return X_train_norm, X_test_norm
 
-fig = plt.figure(figsize=(5,5))
-plt.scatter(pca_lda_data[:,0],pca_lda_data[:,1], c=Y, cmap=matplotlib.colors.ListedColormap(colors),alpha=0.7)
-plt.title('Dataset with Outliers')
+def feature_selection(X_train_norm, y_train_enc, X_test_norm, score_function):
+    test = SelectKBest(score_func=score_function, k=100)
+    fit = test.fit(X_train_norm, y_train_enc)
+    #print(fit.get_support(indices=True))
+    X_train_fs = fit.transform(X_train_norm)
+    X_test_fs = fit.transform(X_test_norm)
+    return X_train_fs, X_test_fs
+
+def get_performace_measures(model, X_train, X_test, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list):
+    model = OneVsRestClassifier(model).fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+
+    # cm = confusion_matrix(y_test, y_pred)
+    # print(cm)
+    # tn, fp, fn, tp = cm.ravel()
+    
+    # if tp+fp != 0:
+    #     PPV_list.append(tp/(tp+fp))
+    # if tn+fn != 0:    
+    #     NPV_list.append(tn/(tn+fn))
+    # if tn+fp != 0:
+    #     Specificity_list.append(tn/(tn+fp))
+    # if tp+fn != 0:
+    #     Sensitivity_list.append(tp/(tp+fn))
+    Accuracy_list.append(accuracy_score(y_test, y_pred))
+    
+
+X, y = read_data('prad_tcga_genes.csv', 'prad_tcga_clinical_data.csv')
+
+kf = KFold(n_splits = 10, shuffle=True)
+
+PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list = [], [], [], [], []
+for train_index, test_index in kf.split(X):
+    X_train, X_test, y_train, y_test = X.iloc[train_index], X.iloc[test_index], y.iloc[train_index], y.iloc[test_index]
+    X_train_norm, X_test_norm = prepare_inputs(X_train, X_test)
+    X_train_fs, X_test_fs = feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+
+    get_performace_measures(GaussianNB(), X_train_fs, X_test_fs, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list)
+    
+print("-----------------------------------------------")
+# print("PPV:", round(mean(PPV_list), 4))
+# print("NPV: ", round(mean(NPV_list), 4))
+# print("Specificity: ", round(mean(Specificity_list), 4))
+# print("Sensitivity: ", round(mean(Sensitivity_list), 4))
+print("Accuracy: ", round(mean(Accuracy_list), 4))
+print("-----------------------------------------------")
