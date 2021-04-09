@@ -88,7 +88,7 @@ def remove_low_variance_feature(X):
     
     
 def feature_selection(X_train_norm, y_train_enc, X_test_norm, score_function):
-    best_k = SelectKBest(score_func=score_function, k=11)
+    best_k = SelectKBest(score_func=score_function, k=15)
     fit = best_k.fit(X_train_norm, y_train_enc)
     #print(fit.get_support(indices=True))
     X_train_fs = fit.transform(X_train_norm)
@@ -108,7 +108,14 @@ def get_performace_measures(model, X_train, X_test, y_train, y_test, PPV_list, N
 
     Accuracy_list.append(accuracy_score(y_test, y_pred))
     
-
+def dimensionality_reduction(X,y):
+        pca = KernelPCA(kernel='rbf')
+        #pca_reduced_data = pca.fit_transform(X,y)
+        X_transformed = pca.fit_transform(X)
+        return X_transformed
+        #lda = LinearDiscriminantAnalysis()
+        #pca_lda_data = lda.fit_transform(pca_reduced_data,y)
+    
 X, y = read_data('prad_tcga_genes.csv', 'prad_tcga_clinical_data.csv')
 
 #Resampling dataset
@@ -116,11 +123,18 @@ sme = SMOTEENN(random_state=42,smote=SMOTE(random_state=42, k_neighbors=1))
 X, y = sme.fit_resample(X, y)
 print('Resampling of dataset using SMOTEENN %s' % Counter(y), '\n')
 
+
+#Reducing the Dimensionality of the Dataset before feature selection
+pca = KernelPCA(kernel='rbf')
+X = pca.fit_transform(X)
+
+
+#K-Fold cross validation 
 kf = KFold(n_splits = 10, shuffle=True, random_state=23)
 
 PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list = [], [], [], [], []
 for train_index, test_index in kf.split(X):
-    X_train, X_test, y_train, y_test = X.iloc[train_index], X.iloc[test_index], y.iloc[train_index], y.iloc[test_index]
+    X_train, X_test, y_train, y_test = X[train_index], X[test_index], y.iloc[train_index], y.iloc[test_index]
     X_train_norm, X_test_norm = prepare_inputs(X_train, X_test)
     X_train_fs, X_test_fs = feature_selection(X_train_norm, y_train, X_test_norm, chi2)
 
