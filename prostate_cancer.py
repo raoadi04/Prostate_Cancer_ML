@@ -13,6 +13,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.feature_selection import SelectKBest, chi2, mutual_info_classif
+from mlxtend.feature_selection import SequentialFeatureSelector as SFS
+
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import confusion_matrix
@@ -87,27 +89,54 @@ def remove_low_variance_feature(X):
     return sel.fit_transform(X)
     
     
-def feature_selection(X_train_norm, y_train_enc, X_test_norm, score_function):
-    best_k = SelectKBest(score_func=score_function, k=15)
-    fit = best_k.fit(X_train_norm, y_train_enc)
-    #print(fit.get_support(indices=True))
+def feature_selection(X_train_norm, y_train, X_test_norm, score_function):
+    best_k = SelectKBest(score_func=score_function, k=300)
+    fit = best_k.fit(X_train_norm, y_train)
     X_train_fs = fit.transform(X_train_norm)
     X_test_fs = fit.transform(X_test_norm)
     
-    dfscores = pd.DataFrame(fit.scores_)
-    dfcolumns = pd.DataFrame(X_train.columns)
-    featureScores = pd.concat([dfcolumns, dfscores], axis=1)
-    featureScores.columns = ['Features','Score']
-    print(featureScores.nlargest(9,'Score'))
-
+    # DONOT REMOVE 
+    # dfscores = pd.DataFrame(fit.scores_)
+    # dfcolumns = pd.DataFrame(X_train.columns)
+    # featureScores = pd.concat([dfcolumns, dfscores], axis=1)
+    # featureScores.columns = ['Features','Score']
+    # best = featureScores.nlargest(40,'Score')
+    # for f in best['Features']:
+    #     featureVoting[f] = featureVoting.get(f, 0) + 1 
+    #best.plot(x='Features', y="Score", kind="bar")
     return X_train_fs, X_test_fs
 
-def get_performace_measures(model, X_train, X_test, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list):
+def forward_feature_selecion(X_train_fs, y_train, X_test_fs):
+    sfs = SFS(LinearDiscriminantAnalysis(), 
+		k_features=13,
+		forward=True,
+		floating = False,
+		scoring = 'r2',
+		cv = 0)
+    fit = sfs.fit(X_train_fs, y_train)
+    X_train_wfs = fit.transform(X_train_fs)
+    X_test_wfs = fit.transform(X_test_fs)
+    print(sfs.k_feature_names_)     # to get the final set of features
+    return X_train_wfs, X_test_wfs
+
+    
+
+def get_performace_measures(model, X_train, X_test, y_train, y_test, Accuracy_list):
     model = OneVsRestClassifier(model).fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
-    Accuracy_list.append(accuracy_score(y_test, y_pred))
-    
+    # Accuracy_list.append(accuracy_score(y_test, y_pred))
+
+    yT = model.label_binarizer_.transform(y_test).toarray().T
+    # Iterate through all L classifiers
+    print("------------------------------")
+    for i, (classifier, is_ith_class) in enumerate(zip(model.estimators_, yT)):
+        print(classifier.score(X_test, is_ith_class))
+        Accuracy_list[i] += classifier.score(X_test, is_ith_class)
+        
+
+
+# Currenlty not in use
 def dimensionality_reduction(X,y):
         pca = KernelPCA(kernel='rbf')
         #pca_reduced_data = pca.fit_transform(X,y)
@@ -115,31 +144,33 @@ def dimensionality_reduction(X,y):
         return X_transformed
         #lda = LinearDiscriminantAnalysis()
         #pca_lda_data = lda.fit_transform(pca_reduced_data,y)
-    
-X, y = read_data('prad_tcga_genes.csv', 'prad_tcga_clinical_data.csv')
+       
 
-#Resampling dataset
+X, y = read_data('../prad_tcga_genes.csv', '../prad_tcga_clinical_data.csv')
+
+#Resampling dataset, since our data is imbalanced 
 sme = SMOTEENN(random_state=42,smote=SMOTE(random_state=42, k_neighbors=1))
 X, y = sme.fit_resample(X, y)
 print('Resampling of dataset using SMOTEENN %s' % Counter(y), '\n')
 
-
-#Reducing the Dimensionality of the Dataset before feature selection
-pca = KernelPCA(kernel='rbf')
-X = pca.fit_transform(X)
-
+featureVoting = {}
 
 #K-Fold cross validation 
 kf = KFold(n_splits = 10, shuffle=True, random_state=23)
 
-PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list = [], [], [], [], []
+Accuracy_list =  [0, 0, 0, 0, 0]
 for train_index, test_index in kf.split(X):
-    X_train, X_test, y_train, y_test = X[train_index], X[test_index], y.iloc[train_index], y.iloc[test_index]
+    X_train, X_test, y_train, y_test = X.iloc[train_index], X.iloc[test_index], y.iloc[train_index], y.iloc[test_index]
     X_train_norm, X_test_norm = prepare_inputs(X_train, X_test)
     X_train_fs, X_test_fs = feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+    X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+    get_performace_measures(LinearDiscriminantAnalysis(), X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
 
-    get_performace_measures(LinearDiscriminantAnalysis(), X_train_fs, X_test_fs, y_train, y_test, PPV_list, NPV_list, Specificity_list, Sensitivity_list, Accuracy_list)
     
 print("-----------------------------------------------")
-print("Accuracy: ", round(mean(Accuracy_list), 4))
+# print("Accuracy: ", round(mean(Accuracy_list), 4))
+for i, a in enumerate(Accuracy_list):
+    print("Accuracy of", 5+i, "vs Rest: ", round(a/5, 4) )
 print("-----------------------------------------------")
+
+
