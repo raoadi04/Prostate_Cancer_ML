@@ -142,7 +142,7 @@ def backward_feature_selection(X_train_fs, y_train, X_test_fs):
     X_train_wfs = fit.transform(X_train_fs)
     X_test_wfs = fit.transform(X_test_fs)
     
-    best = sfs.k_feature_names_     # to get the final set of features
+    best = sbs.k_feature_names_     # to get the final set of features
     #print(best)
 
     return X_train_wfs, X_test_wfs
