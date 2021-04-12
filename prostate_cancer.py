@@ -9,7 +9,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn import svm                                  
 
 from sklearn.decomposition import PCA, KernelPCA
-from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import IsolationForest, RandomForestClassifier
 
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
@@ -29,7 +29,9 @@ from imblearn.over_sampling import SMOTE
 from imblearn.combine import SMOTEENN
 
 # MODEL = OneVsRestClassifier(svm.SVC(kernel='linear'))
-MODEL = LinearDiscriminantAnalysis()
+MODEL_LDA = LinearDiscriminantAnalysis()
+MODEL_NB = GaussianNB()
+MODEL_RF = RandomForestClassifier()
 def load_genomic_data(filename):
      # load the geneomic data
     genomic_df = pd.read_csv(filename)
@@ -123,7 +125,25 @@ def forward_feature_selecion(X_train_fs, y_train, X_test_fs):
     X_test_wfs = fit.transform(X_test_fs)
     
     best = sfs.k_feature_names_     # to get the final set of features
-    print(best)
+    #print(best)
+
+    return X_train_wfs, X_test_wfs
+
+def backward_feature_selection(X_train_fs, y_train, X_test_fs):
+    sbs = SFS(MODEL, 
+		k_features=20,
+		forward=False,
+		floating = False,
+        verbose=2,
+		scoring = 'accuracy',
+		cv = 5)
+    fit = sfs.fit(X_train_fs, y_train)
+    #print(fit)
+    X_train_wfs = fit.transform(X_train_fs)
+    X_test_wfs = fit.transform(X_test_fs)
+    
+    best = sfs.k_feature_names_     # to get the final set of features
+    #print(best)
 
     return X_train_wfs, X_test_wfs
 
@@ -139,9 +159,9 @@ def get_performace_measures(model, X_train, X_test, y_train, y_test, Accuracy_li
     # Iterate through all L classifiers
     print("------------------------------")
     for i, (classifier, is_ith_class) in enumerate(zip(model.estimators_, yT)):
-        print("Accuracy of", 6+i, "vs Rest: ", round(classifier.score(X_test, is_ith_class), 4) )
+        print("Accuracy of", 6+i, "vs Rest: ", round(classifier.score(X_test, is_ith_class), 4))
         Accuracy_list[i] += classifier.score(X_test, is_ith_class)
-        
+    print('\n\n')    
 
 
 # Currenlty not in use
@@ -164,8 +184,109 @@ print('Resampling of dataset using SMOTEENN %s' % Counter(y), '\n')
 X_train, X_test, y_train, y_test = train_test_split(X, y, train_size = 0.7, random_state=42)
 
 X_train_norm, X_test_norm = prepare_inputs(X_train, X_test)
-X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+
+#--------------------------------------------------------------#
+            #Comparative Analysis 
+#--------------------------------------------------------------#
+
+print('\nLDA Classification\n')
+
+#1
+#print('((Chi2: 300 features))-->((Forward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+#X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_LDA, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#2
+print('((Mutual info: 300 features))-->((Forward_Selection: 20- features))')
+X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
 X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
 
 Accuracy_list =  [0, 0, 0, 0, 0]
-get_performace_measures(MODEL, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+get_performace_measures(MODEL_LDA, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#3
+#print('((Chi2: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_LDA, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#4
+#print('((Mutual info: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_LDA, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#print('\nNaive Bayes Classification\n')
+
+#5
+#print('((Chi2: 300 features))-->((Forward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+#X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_NB, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#6
+#print('((Mutual info: 300 features))-->((Forward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_NB, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#7
+#print('((Chi2: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_NB, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#8
+#print('((Mutual info: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_NB, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#print('\nRandom Forest Classification\n')
+
+#9
+#print('((Chi2: 300 features))-->((Forward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, chi2)
+#X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_RF, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#10
+#print('((Mutual info: 300 features))-->((Forward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = forward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_RF, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#11
+#print('((Chi2: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_RF, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
+
+#12
+#print('((Mutual info: 300 features))-->((Backward_Selection: 20- features))')
+#X_train_fs, X_test_fs = filter_feature_selection(X_train_norm, y_train, X_test_norm, mutual_info_classif)
+#X_train_wfs, X_test_wfs = backward_feature_selecion(X_train_fs, y_train, X_test_fs)
+
+#Accuracy_list =  [0, 0, 0, 0, 0]
+#get_performace_measures(MODEL_RF, X_train_wfs, X_test_wfs, y_train, y_test, Accuracy_list)
